@@ -159,6 +159,8 @@ app.get('/api/getAddonsOptions', (req, res) => {
 		buzzerEnabled: 0,
 		buzzerPin: -1,
 		buzzerVolume: 100,
+		buzzerIntroSong: -1,
+		buzzerSongs: [{index: -1, value: "Off"}],
 		usedPins,
 	});
 });

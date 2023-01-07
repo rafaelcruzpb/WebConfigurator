@@ -59,6 +59,7 @@ const schema = yup.object().shape({
 	buzzerEnabled: yup.number().required().min(0).max(1).label('Enabled?'),
 	buzzerPin: yup.number().required().min(-1).max(29).test('', '${originalValue} is already assigned!', (value) => usedPins.indexOf(value) === -1).label('Buzzer Pin'),
 	buzzerVolume: yup.number().required().min(0).max(100).label('Buzzer Volume'),
+	buzzerIntroSong: yup.number().required().min(-1).label('Buzzer Intro Song'),
 });
 
 const defaultValues = {
@@ -83,7 +84,8 @@ const defaultValues = {
 	dualDirCombineMode: 0,
 	buzzerEnabled: 0,
 	buzzerPin: -1,
-	buzzerVolume: 100
+	buzzerVolume: 100,
+	buzzerIntroSong: -1,
 };
 
 const REVERSE_ACTION = [
@@ -93,6 +95,7 @@ const REVERSE_ACTION = [
 ];
 
 let usedPins = [];
+let buzzerSongs = [];
 
 const FormContext = () => {
 	const { values, setValues } = useFormikContext();
@@ -101,6 +104,7 @@ const FormContext = () => {
 		async function fetchData() {
 			const data = await WebApi.getAddonsOptions();
 			usedPins = data.usedPins;
+			buzzerSongs = [{index: -1, value: "Off"}, ...data.buzzerSongs.map((o, i) => ({index: i, value: o}))];
 			setValues(data);
 		}
 		fetchData();
@@ -157,6 +161,8 @@ const FormContext = () => {
 			values.buzzerPin = parseInt(values.buzzerPin);
 		if (!!values.buzzerVolume)
 			values.buzzerVolume = parseInt(values.buzzerVolume);
+		if (!!values.buzzerIntroSong)
+			values.buzzerIntroSong = parseInt(values.buzzerIntroSong);
 	}, [values, setValues]);
 
 	return null;
@@ -509,6 +515,15 @@ export default function AddonsConfigPage() {
 								min={0}
 								max={100}
 							/>
+							<Form.Group className="row mb-3">
+								<Form.Label>Intro Song</Form.Label>
+								<div className="col-sm-3">
+									<Form.Select name="buzzerIntroSong" className="form-select-sm" value={values.buzzerIntroSong} onChange={handleChange} isInvalid={errors.buzzerIntroSong}>
+										{buzzerSongs.map((o, i) => <option key={`button-buzzerIntroSong-option-${i}`} value={o.index}>{o.value}</option>)}
+									</Form.Select>
+									<Form.Control.Feedback type="invalid">{errors.buzzerIntroSong}</Form.Control.Feedback>
+								</div>
+							</Form.Group>
 						</Col>
 					</Section>
 					<div className="mt-3">
