@@ -60,6 +60,8 @@ const schema = yup.object().shape({
 	buzzerPin: yup.number().required().min(-1).max(29).test('', '${originalValue} is already assigned!', (value) => usedPins.indexOf(value) === -1).label('Buzzer Pin'),
 	buzzerVolume: yup.number().required().min(0).max(100).label('Buzzer Volume'),
 	buzzerIntroSong: yup.number().required().min(-1).label('Buzzer Intro Song'),
+	buzzerCustomIntroSongToneDuration: yup.number().required().min(0).max(1000).label('Custom Intro Song Tone Duration'),
+	buzzerCustomIntroSong: yup.string().label('Custom Intro Song Tones'),
 });
 
 const defaultValues = {
@@ -86,6 +88,8 @@ const defaultValues = {
 	buzzerPin: -1,
 	buzzerVolume: 100,
 	buzzerIntroSong: -1,
+	buzzerCustomIntroSongToneDuration: 150,
+	buzzerCustomIntroSong: "",
 };
 
 const REVERSE_ACTION = [
@@ -93,6 +97,105 @@ const REVERSE_ACTION = [
 	{ label: 'Enable', value: 1 },
 	{ label: 'Neutral', value: 2 },
 ];
+
+const notes = {
+	B0 : 31,
+	C1 : 33,
+	CS1 : 35,
+	DS1 : 39,
+	E1 : 41,
+	F1 : 44,
+	FS1 : 46,
+	G1 : 49,
+	GS1 : 52,
+	A1 : 55,
+	AS1 : 58,
+	B1 : 62,
+	C2 : 65,
+	CS2 : 69,
+	D2 : 73,
+	DS2 : 78,
+	E2 : 82,
+	F2 : 87,
+	FS2 : 93,
+	G2 : 98,
+	GS2 : 104,
+	A2 : 110,
+	AS2 : 117,
+	B2 : 123,
+	C3 : 131,
+	CS3 : 139,
+	D3 : 147,
+	DS3 : 156,
+	E3 : 165,
+	F3 : 175,
+	FS3 : 185,
+	G3 : 196,
+	GS3 : 208,
+	A3 : 220,
+	AS3 : 233,
+	B3 : 247,
+	C4 : 262,
+	CS4 : 277,
+	D4 : 294,
+	DS4 : 311,
+	E4 : 330,
+	F4 : 349,
+	FS4 : 370,
+	G4 : 392,
+	GS4 : 415,
+	A4 : 440,
+	AS4 : 466,
+	B4 : 494,
+	C5 : 523,
+	CS5 : 554,
+	D5 : 587,
+	DS5 : 622,
+	E5 : 659,
+	F5 : 698,
+	FS5 : 740,
+	G5 : 784,
+	GS5 : 831,
+	A5 : 880,
+	AS5 : 932,
+	B5 : 988,
+	C6 : 1047,
+	CS6 : 1109,
+	D6 : 1175,
+	DS6 : 1245,
+	E6 : 1319,
+	F6 : 1397,
+	FS6 : 1480,
+	G6 : 1568,
+	GS6 : 1661,
+	A6 : 1760,
+	AS6 : 1865,
+	B6 : 1976,
+	C7 : 2093,
+	CS7 : 2217,
+	D7 : 2349,
+	DS7 : 2489,
+	E7 : 2637,
+	F7 : 2794,
+	FS7 : 2960,
+	G7 : 3136,
+	GS7 : 3322,
+	A7 : 3520,
+	AS7 : 3729,
+	B7 : 3951,
+	C8 : 4186,
+	CS8 : 4435,
+	D8 : 4699,
+	DS8 : 4978,
+	PAUSE : 0
+};
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const oscillator = audioCtx.createOscillator();
+
+oscillator.type = 'square';
+oscillator.frequency.value = 0;
+oscillator.connect(audioCtx.destination);
 
 let usedPins = [];
 let buzzerSongs = [];
@@ -104,7 +207,11 @@ const FormContext = () => {
 		async function fetchData() {
 			const data = await WebApi.getAddonsOptions();
 			usedPins = data.usedPins;
-			buzzerSongs = [{index: -1, value: "Off"}, ...data.buzzerSongs.map((o, i) => ({index: i, value: o}))];
+			buzzerSongs = [
+				{index: -1, value: "Off"}, 
+				...data.buzzerSongs.map((o, i) => ({index: i+1, value: o})),
+				{index: 0, value: "CUSTOM"}
+			];
 			setValues(data);
 		}
 		fetchData();
@@ -163,6 +270,8 @@ const FormContext = () => {
 			values.buzzerVolume = parseInt(values.buzzerVolume);
 		if (!!values.buzzerIntroSong)
 			values.buzzerIntroSong = parseInt(values.buzzerIntroSong);
+		if (!!values.buzzerCustomIntroSongToneDuration)
+			values.buzzerCustomIntroSongToneDuration = parseInt(values.buzzerCustomIntroSongToneDuration);
 	}, [values, setValues]);
 
 	return null;
@@ -170,10 +279,61 @@ const FormContext = () => {
 
 export default function AddonsConfigPage() {
 	const [saveMessage, setSaveMessage] = useState('');
+	const [playingState, setPlayingState] = useState(false);
+	const [currentSong, setCurrentSong] = useState(null);
 
 	const onSuccess = async (values) => {
 		const success = WebApi.setAddonsOptions(values);
 		setSaveMessage(success ? 'Saved! Please Restart Your Device' : 'Unable to Save');
+	};
+
+	var lastPlayingIntervalId;
+
+	useEffect(() => {
+		if (currentSong == null) return;
+
+		var currentIndexTone = 0;
+
+		lastPlayingIntervalId = setInterval(() => {
+			console.log(playingState);
+
+			if (currentIndexTone >= currentSong.song.length-1) {
+				oscillator.disconnect(audioCtx.destination);
+				clearTimeout(lastPlayingIntervalId);
+				setPlayingState(false);
+				return;
+			}
+			
+			let tone = currentSong.song[currentIndexTone];
+			
+			if (notes[tone] !== undefined) {
+				oscillator.frequency.setValueAtTime(notes[tone], audioCtx.currentTime);
+
+				if (audioCtx.state === 'suspended') {
+					oscillator.start();
+				}
+				oscillator.connect(audioCtx.destination);
+			}
+			currentIndexTone++;
+		}, currentSong.toneDuration);
+		
+	}, [currentSong]);
+
+	const onPlaySong = async (introSongSelectValue, customToneDurationSong, customSong) => {
+
+		if (playingState) {
+			clearInterval(lastPlayingIntervalId);
+			oscillator.disconnect(audioCtx.destination);
+			setPlayingState(false);
+			return;
+		}
+
+		if (introSongSelectValue == 0) { // custom song
+			setCurrentSong({toneDuration: customToneDurationSong, song: customSong.replaceAll(" ","").split(',')});
+			setPlayingState(true);
+		} else if(introSongSelectValue > 0) { // one song from select
+			setPlayingState(true);
+		}
 	};
 
 	return (
@@ -523,7 +683,47 @@ export default function AddonsConfigPage() {
 									</Form.Select>
 									<Form.Control.Feedback type="invalid">{errors.buzzerIntroSong}</Form.Control.Feedback>
 								</div>
+								<div className="col-sm-3">
+									<Button 
+										className="btn-sm" 
+										onClick={() => onPlaySong(values.buzzerIntroSong, values.buzzerCustomIntroSongToneDuration, values.buzzerCustomIntroSong)} 
+										type="button">
+											{playingState ? 'Stop' : 'Play'}
+									</Button>
+								</div>
 							</Form.Group>
+							{
+								values.buzzerIntroSong == 0
+								? ( <>
+									<FormControl type="number"
+										label="Custom Intro Song Tone Duration (ms)"
+										name="buzzerCustomIntroSongToneDuration"
+										className="form-control-sm"
+										groupClassName="col-sm-3 mb-3"
+										value={values.buzzerCustomIntroSongToneDuration}
+										error={errors.buzzerCustomIntroSongToneDuration}
+										isInvalid={errors.buzzerCustomIntroSongToneDuration}
+										onChange={handleChange}
+										min={0}
+										max={1000}
+									/>
+									<Form.Group className="row mb-3">
+										<Form.Label>Custom Intro Song Tones</Form.Label>
+										<div className="col-sm-3">
+											<Form.Control as="textarea" 
+												name="buzzerCustomIntroSong" 
+												className="form-select-sm" 
+												value={values.buzzerCustomIntroSong} 
+												onChange={handleChange} 
+												isInvalid={errors.buzzerCustomIntroSong}
+												maxLength={512}
+											/>
+										</div>
+									</Form.Group>
+									</>
+								) 
+								: null
+							}
 						</Col>
 					</Section>
 					<div className="mt-3">

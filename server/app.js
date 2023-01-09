@@ -160,7 +160,9 @@ app.get('/api/getAddonsOptions', (req, res) => {
 		buzzerPin: -1,
 		buzzerVolume: 100,
 		buzzerIntroSong: -1,
-		buzzerSongs: [{index: -1, value: "Off"}],
+		buzzerSongs: ["DEFAULT_INTRO_SONG"],
+		buzzerCustomIntroSongToneDuration: 150,
+		buzzerCustomIntroSong: "E2,  E2,  E3,  E2,  E2,  D3,  E2,  E2,C3,  E2,  E2,  AS2,  E2,  E2,  B2,  C3, E2,  E2,  E3,  E2,  E2,  D3,  E2,  E2, C3,  E2,  E2,  AS2, AS2, AS2",
 		usedPins,
 	});
 });
