@@ -6,6 +6,7 @@ import FormControl from '../Components/FormControl';
 import FormSelect from '../Components/FormSelect';
 import Section from '../Components/Section';
 import WebApi from '../Services/WebApi';
+import _ from 'lodash';
 
 const I2C_BLOCKS = [
 	{ label: 'i2c0', value: 0 },
@@ -61,7 +62,17 @@ const schema = yup.object().shape({
 	buzzerVolume: yup.number().required().min(0).max(100).label('Buzzer Volume'),
 	buzzerIntroSong: yup.number().required().min(-1).label('Buzzer Intro Song'),
 	buzzerCustomIntroSongToneDuration: yup.number().required().min(0).max(1000).label('Custom Intro Song Tone Duration'),
-	buzzerCustomIntroSong: yup.string().label('Custom Intro Song Tones'),
+	buzzerCustomIntroSong: yup.string().test(
+		'', 
+		null, 
+		(value, testContext) => {
+			let errors = value.replace(/(\r\n| |\n|\r)/gm,"").toUpperCase().split(',').filter((t) => {if (notes[t] === undefined) return t;}); 
+			if (errors.length > 0) {
+				return testContext.createError({message: "Notes '"+errors.join(', ')+"' invalid."});
+			}
+			return true;
+		})
+		.label('Custom Intro Song Tones'),
 });
 
 const defaultValues = {
@@ -96,6 +107,11 @@ const REVERSE_ACTION = [
 	{ label: 'Disable', value: 0 },
 	{ label: 'Enable', value: 1 },
 	{ label: 'Neutral', value: 2 },
+];
+
+const BUZZER_INTRO_OPTIONS = [
+	{index: -1, name: "OFF"},
+	{index: 0, name: "CUSTOM"},
 ];
 
 const notes = {
@@ -207,11 +223,8 @@ const FormContext = () => {
 		async function fetchData() {
 			const data = await WebApi.getAddonsOptions();
 			usedPins = data.usedPins;
-			buzzerSongs = [
-				{index: -1, value: "Off"}, 
-				...data.buzzerSongs.map((o, i) => ({index: i+1, value: o})),
-				{index: 0, value: "CUSTOM"}
-			];
+			buzzerSongs = data.buzzerSongs.map((o, i) => ({index: i+1, name: (i+1)+" - "+o.name, toneDuration: o.toneDuration, tones: o.tones}));
+			delete data.buzzerSongs;
 			setValues(data);
 		}
 		fetchData();
@@ -295,9 +308,8 @@ export default function AddonsConfigPage() {
 		var currentIndexTone = 0;
 
 		lastPlayingIntervalId = setInterval(() => {
-			console.log(playingState);
 
-			if (currentIndexTone >= currentSong.song.length-1) {
+			if (currentIndexTone > currentSong.song.length-1) {
 				oscillator.disconnect(audioCtx.destination);
 				clearTimeout(lastPlayingIntervalId);
 				setPlayingState(false);
@@ -329,10 +341,21 @@ export default function AddonsConfigPage() {
 		}
 
 		if (introSongSelectValue == 0) { // custom song
-			setCurrentSong({toneDuration: customToneDurationSong, song: customSong.replaceAll(" ","").split(',')});
+			setCurrentSong({toneDuration: customToneDurationSong, song: customSong.replace(/(\r\n| |\n|\r)/gm,"").toUpperCase().split(',')});
 			setPlayingState(true);
 		} else if(introSongSelectValue > 0) { // one song from select
-			setPlayingState(true);
+			let songSelected = buzzerSongs[introSongSelectValue-1];
+
+			if (songSelected !== undefined) {
+				let tonesTranslated = songSelected.tones.map((freq) => {
+					for (let keyNote in notes) {
+						if (notes[keyNote] == freq) return keyNote;
+					}
+				});
+				console.log(tonesTranslated);
+				setCurrentSong({toneDuration: songSelected.toneDuration, song: tonesTranslated});
+				setPlayingState(true);
+			}
 		}
 	};
 
@@ -679,7 +702,7 @@ export default function AddonsConfigPage() {
 								<Form.Label>Intro Song</Form.Label>
 								<div className="col-sm-3">
 									<Form.Select name="buzzerIntroSong" className="form-select-sm" value={values.buzzerIntroSong} onChange={handleChange} isInvalid={errors.buzzerIntroSong}>
-										{buzzerSongs.map((o, i) => <option key={`button-buzzerIntroSong-option-${i}`} value={o.index}>{o.value}</option>)}
+										{BUZZER_INTRO_OPTIONS.concat(buzzerSongs).map((o, i) => <option key={`button-buzzerIntroSong-option-${i}`} value={o.index}>{o.name}</option>)}
 									</Form.Select>
 									<Form.Control.Feedback type="invalid">{errors.buzzerIntroSong}</Form.Control.Feedback>
 								</div>
@@ -715,9 +738,12 @@ export default function AddonsConfigPage() {
 												className="form-select-sm" 
 												value={values.buzzerCustomIntroSong} 
 												onChange={handleChange} 
+												error={errors.buzzerCustomIntroSong}
 												isInvalid={errors.buzzerCustomIntroSong}
 												maxLength={512}
 											/>
+											<Form.Control.Feedback type="invalid">{errors.buzzerCustomIntroSong}</Form.Control.Feedback>
+											<p><small>Valid Notes: {Object.keys(notes).join(', ')}</small></p>
 										</div>
 									</Form.Group>
 									</>
