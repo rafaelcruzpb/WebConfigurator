@@ -62,7 +62,7 @@ const schema = yup.object().shape({
 	buzzerVolume: yup.number().required().min(0).max(100).label('Buzzer Volume'),
 	buzzerIntroSong: yup.number().required().min(-1).label('Buzzer Intro Song'),
 	buzzerCustomIntroSongToneDuration: yup.number().required().min(0).max(1000).label('Custom Intro Song Tone Duration'),
-	buzzerCustomIntroSong: yup.string().test(
+	buzzerCustomIntroSong: yup.string().required().test(
 		'', 
 		null, 
 		(value, testContext) => {
@@ -113,6 +113,8 @@ const BUZZER_INTRO_OPTIONS = [
 	{index: -1, name: "OFF"},
 	{index: 0, name: "CUSTOM"},
 ];
+
+const BUZZER_CUSTOM_SONG_LENGTH_LIMIT = 250;
 
 const notes = {
 	B0 : 31,
@@ -285,6 +287,8 @@ const FormContext = () => {
 			values.buzzerIntroSong = parseInt(values.buzzerIntroSong);
 		if (!!values.buzzerCustomIntroSongToneDuration)
 			values.buzzerCustomIntroSongToneDuration = parseInt(values.buzzerCustomIntroSongToneDuration);
+		if (!!values.buzzerCustomIntroSong)
+			values.buzzerCustomIntroSong = values.buzzerCustomIntroSong.replace(/(\r\n| |\n|\r)/gm,"").toUpperCase();
 	}, [values, setValues]);
 
 	return null;
@@ -731,7 +735,7 @@ export default function AddonsConfigPage() {
 										max={1000}
 									/>
 									<Form.Group className="row mb-3">
-										<Form.Label>Custom Intro Song Tones</Form.Label>
+										<Form.Label>Custom Intro Song Tones ({BUZZER_CUSTOM_SONG_LENGTH_LIMIT - values.buzzerCustomIntroSong.length} chars left)</Form.Label>
 										<div className="col-sm-3">
 											<Form.Control as="textarea" 
 												name="buzzerCustomIntroSong" 
@@ -740,7 +744,7 @@ export default function AddonsConfigPage() {
 												onChange={handleChange} 
 												error={errors.buzzerCustomIntroSong}
 												isInvalid={errors.buzzerCustomIntroSong}
-												maxLength={512}
+												maxLength={BUZZER_CUSTOM_SONG_LENGTH_LIMIT}
 											/>
 											<Form.Control.Feedback type="invalid">{errors.buzzerCustomIntroSong}</Form.Control.Feedback>
 											<p><small>Valid Notes: {Object.keys(notes).join(', ')}</small></p>
