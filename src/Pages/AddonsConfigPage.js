@@ -37,6 +37,8 @@ const BUZZER_MODE = [
 	{ label: 'Enabled', value: 1 },
 ];
 
+const BUZZER_CUSTOM_SONG_TONES_LIMIT = 100;
+
 const schema = yup.object().shape({
 	turboPin: yup.number().required().min(-1).max(29).test('', '${originalValue} is already assigned!', (value) => usedPins.indexOf(value) === -1).label('Turbo Pin'),
 	turboPinLED: yup.number().required().min(-1).max(29).test('', '${originalValue} is already assigned!', (value) => usedPins.indexOf(value) === -1).label('Turbo Pin LED'),
@@ -62,13 +64,17 @@ const schema = yup.object().shape({
 	buzzerVolume: yup.number().required().min(0).max(100).label('Buzzer Volume'),
 	buzzerIntroSong: yup.number().required().min(-1).label('Buzzer Intro Song'),
 	buzzerCustomIntroSongToneDuration: yup.number().required().min(0).max(1000).label('Custom Intro Song Tone Duration'),
-	buzzerCustomIntroSong: yup.string().required().test(
+	buzzerCustomIntroSongMapped: yup.string().test(
 		'', 
 		null, 
 		(value, testContext) => {
-			let errors = value.replace(/(\r\n| |\n|\r)/gm,"").toUpperCase().split(',').filter((t) => {if (notes[t] === undefined) return t;}); 
-			if (errors.length > 0) {
-				return testContext.createError({message: "Notes '"+errors.join(', ')+"' invalid."});
+			let splittedNotes = value.replace(/(\r\n| |\n|\r|,\s*$)/gm,"").toUpperCase().split(',');
+			let notesErrors = splittedNotes.filter((t) => {if (notes[t] === undefined) return t;}); 
+			if (notesErrors.length > 0) {
+				return testContext.createError({message: "Notes '"+notesErrors.join(', ')+"' invalid."});
+			}
+			if (splittedNotes.length > BUZZER_CUSTOM_SONG_TONES_LIMIT) {
+				return testContext.createError({message: "Tone limit has been exceeded."});
 			}
 			return true;
 		})
@@ -113,8 +119,6 @@ const BUZZER_INTRO_OPTIONS = [
 	{index: -1, name: "OFF"},
 	{index: 0, name: "CUSTOM"},
 ];
-
-const BUZZER_CUSTOM_SONG_LENGTH_LIMIT = 250;
 
 const notes = {
 	B0 : 31,
@@ -227,6 +231,11 @@ const FormContext = () => {
 			usedPins = data.usedPins;
 			buzzerSongs = data.buzzerSongs.map((o, i) => ({index: i+1, name: (i+1)+" - "+o.name, toneDuration: o.toneDuration, tones: o.tones}));
 			delete data.buzzerSongs;
+			data.buzzerCustomIntroSongMapped = data.buzzerCustomIntroSong.split(',').map((t) => {
+				for(let n in notes) {
+					if (notes[n] == t) return n;
+				}
+			}).join(',');
 			setValues(data);
 		}
 		fetchData();
@@ -287,8 +296,8 @@ const FormContext = () => {
 			values.buzzerIntroSong = parseInt(values.buzzerIntroSong);
 		if (!!values.buzzerCustomIntroSongToneDuration)
 			values.buzzerCustomIntroSongToneDuration = parseInt(values.buzzerCustomIntroSongToneDuration);
-		if (!!values.buzzerCustomIntroSong)
-			values.buzzerCustomIntroSong = values.buzzerCustomIntroSong.replace(/(\r\n| |\n|\r)/gm,"").toUpperCase();
+		if (!!values.buzzerCustomIntroSongMapped)
+			values.buzzerCustomIntroSongMapped = values.buzzerCustomIntroSongMapped.replace(/(\r\n| |\n|\r)/gm,"").toUpperCase();
 	}, [values, setValues]);
 
 	return null;
@@ -300,6 +309,8 @@ export default function AddonsConfigPage() {
 	const [currentSong, setCurrentSong] = useState(null);
 
 	const onSuccess = async (values) => {
+		// convert tones to your frequency number before request
+		values.buzzerCustomIntroSong = values.buzzerCustomIntroSongMapped.replace(/,\s*$/,"").split(',').map((t) => {return notes[t]}).join(',');
 		const success = WebApi.setAddonsOptions(values);
 		setSaveMessage(success ? 'Saved! Please Restart Your Device' : 'Unable to Save');
 	};
@@ -345,7 +356,7 @@ export default function AddonsConfigPage() {
 		}
 
 		if (introSongSelectValue == 0) { // custom song
-			setCurrentSong({toneDuration: customToneDurationSong, song: customSong.replace(/(\r\n| |\n|\r)/gm,"").toUpperCase().split(',')});
+			setCurrentSong({toneDuration: customToneDurationSong, song: customSong.replace(/(\r\n| |\n|\r|,\s*$)/gm,"").toUpperCase().split(',')});
 			setPlayingState(true);
 		} else if(introSongSelectValue > 0) { // one song from select
 			let songSelected = buzzerSongs[introSongSelectValue-1];
@@ -713,7 +724,7 @@ export default function AddonsConfigPage() {
 								<div className="col-sm-3">
 									<Button 
 										className="btn-sm" 
-										onClick={() => onPlaySong(values.buzzerIntroSong, values.buzzerCustomIntroSongToneDuration, values.buzzerCustomIntroSong)} 
+										onClick={() => onPlaySong(values.buzzerIntroSong, values.buzzerCustomIntroSongToneDuration, values.buzzerCustomIntroSongMapped)} 
 										type="button">
 											{playingState ? 'Stop' : 'Play'}
 									</Button>
@@ -735,18 +746,17 @@ export default function AddonsConfigPage() {
 										max={1000}
 									/>
 									<Form.Group className="row mb-3">
-										<Form.Label>Custom Intro Song Tones ({BUZZER_CUSTOM_SONG_LENGTH_LIMIT - values.buzzerCustomIntroSong.length} chars left)</Form.Label>
+										<Form.Label>Custom Intro Song Tones ({Math.max(BUZZER_CUSTOM_SONG_TONES_LIMIT - values.buzzerCustomIntroSongMapped.split(',').length, 0)} tones left)</Form.Label>
 										<div className="col-sm-3">
 											<Form.Control as="textarea" 
-												name="buzzerCustomIntroSong" 
+												name="buzzerCustomIntroSongMapped" 
 												className="form-select-sm" 
-												value={values.buzzerCustomIntroSong} 
+												value={values.buzzerCustomIntroSongMapped} 
 												onChange={handleChange} 
-												error={errors.buzzerCustomIntroSong}
-												isInvalid={errors.buzzerCustomIntroSong}
-												maxLength={BUZZER_CUSTOM_SONG_LENGTH_LIMIT}
+												error={errors.buzzerCustomIntroSongMapped}
+												isInvalid={errors.buzzerCustomIntroSongMapped}
 											/>
-											<Form.Control.Feedback type="invalid">{errors.buzzerCustomIntroSong}</Form.Control.Feedback>
+											<Form.Control.Feedback type="invalid">{errors.buzzerCustomIntroSongMapped}</Form.Control.Feedback>
 											<p><small>Valid Notes: {Object.keys(notes).join(', ')}</small></p>
 										</div>
 									</Form.Group>
